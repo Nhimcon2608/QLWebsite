@@ -219,22 +219,6 @@ h3 {
 .sidebar-bottom {
   margin-top: auto;
 }
-.demo-note {
-  padding: 15px;
-  background: #f7f7f7;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  font-size: 11px;
-  color: #777;
-}
-.demo-note strong {
-  color: #333;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  margin-bottom: 6px;
-}
 .account {
   display: flex;
   align-items: center;
