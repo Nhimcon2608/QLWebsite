@@ -1,0 +1,7 @@
+{
+  "name": "qlwebsite-ui-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {"test:ui": "node scripts/ui-smoke.mjs"},
+  "devDependencies": {"playwright": "1.59.1"}
+}

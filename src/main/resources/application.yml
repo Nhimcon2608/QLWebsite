@@ -4,3 +4,6 @@ spring:
 server:
   port: ${PORT:8080}
   address: 127.0.0.1
+app:
+  ui:
+    demo: ${UI_DEMO:true}
