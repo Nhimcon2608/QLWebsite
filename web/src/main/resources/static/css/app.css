@@ -770,6 +770,9 @@ tbody tr:hover {
   font-size: 10px;
   gap: 12px;
 }
+.alerts-page .table-footer {
+  justify-content: flex-end;
+}
 .pagination {
   display: flex;
   gap: 6px;
