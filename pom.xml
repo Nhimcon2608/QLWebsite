@@ -66,7 +66,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                <mainClass>vn.qlwebsite.QlWebsiteApplication</mainClass>
+                <mainClass>com.mycompany.do_an_ltm_2380600550.Do_An_LTM_2380600550</mainClass>
                 </configuration>
             </plugin>
         </plugins>

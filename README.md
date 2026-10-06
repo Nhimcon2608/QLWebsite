@@ -1,80 +1,48 @@
 # QLWebsite
 
-Khung dự án Java dành cho hệ thống quản lý và giám sát website nội bộ, phát triển bằng Apache NetBeans.
+Ứng dụng quản lý và kiểm tra trạng thái website bằng Java 17, Spring Boot, Spring Data JPA và Thymeleaf.
 
-**Trạng thái hiện tại: chỉ chuẩn bị cấu trúc mã nguồn và công cụ build. Chưa triển khai các chức năng trong kế hoạch.**
+- Thư mục gốc: backend cung cấp REST API và lưu dữ liệu kiểm tra.
+- Thư mục [`web/`](web/README.md): giao diện dashboard, quản lý website, biểu đồ và lịch sử; mặc định kết nối backend thật và tắt demo.
 
-## Môi trường
+## Chạy backend
 
-- JDK 17 trở lên (project biên dịch với Java 17).
-- Apache NetBeans có hỗ trợ Maven và tương thích với JDK cài trên máy.
-- Spring Boot 3.5.16, Spring Web và Thymeleaf.
-- Maven Wrapper 3.9.11: không cần cài Maven riêng khi chạy bằng terminal.
-
-Lần build đầu cần Internet để tải Maven và các dependency.
-
-## Mở bằng NetBeans
-
-1. Chọn **File → Open Project** và mở thư mục chứa `pom.xml`.
-2. Chọn JDK 17 hoặc mới hơn trong Java Platforms và cấu hình của project.
-3. Chọn **Clean and Build** để biên dịch.
-4. Chọn **Run Project** để chạy Spring Boot; `nbactions.xml` đã khai báo action Run/Debug.
-
-## Build và chạy bằng terminal
-
-macOS/Linux:
+Cần JDK 17 trở lên và một cơ sở dữ liệu SQL Server. Cấu hình kết nối nằm trong `src/main/resources/application.properties`; có thể ghi đè bằng các biến môi trường `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME` và `SPRING_DATASOURCE_PASSWORD`.
 
 ```sh
-./mvnw clean verify
-./mvnw spring-boot:run
-```
-
-Windows:
-
-```bat
-mvnw.cmd clean verify
-mvnw.cmd spring-boot:run
-```
-
-Hoặc chạy JAR sau khi build:
-
-```sh
+./mvnw verify
 java -jar target/qlwebsite-0.1.0.jar
 ```
 
-Ứng dụng khởi động tại `127.0.0.1:8080`. Hiện chưa có controller, trang giao diện hoặc API nên truy cập trình duyệt sẽ trả về **404**; đây là trạng thái dự kiến của khung ban đầu. Dừng bằng `Ctrl+C`.
+Backend mặc định chạy tại `http://127.0.0.1:8082`. Trên Windows dùng `mvnw.cmd`. Maven Wrapper tự tải Maven và các dependency khi cần.
 
-Đổi port bằng biến môi trường `PORT`, ví dụ `PORT=8081 ./mvnw spring-boot:run`. File `.env.example` chỉ là mẫu; Spring Boot không tự nạp `.env`.
+## Chạy giao diện
 
-## Cấu trúc
+Sau khi backend đã khởi động, mở terminal khác tại thư mục gốc:
 
-```text
-src/main/java/vn/qlwebsite/
-├── QlWebsiteApplication.java  # Điểm khởi động ứng dụng
-├── config/                   # Cấu hình
-├── controller/               # REST API và page controller
-├── dto/                      # Dữ liệu request/response
-├── entity/                   # Entity
-├── repository/               # Truy cập dữ liệu
-├── service/                  # Nghiệp vụ
-├── monitoring/               # Website checker
-├── scheduler/                # Lập lịch kiểm tra
-├── alert/                    # Cảnh báo
-└── exception/                # Xử lý lỗi
-src/main/resources/
-├── application.yml
-├── db/migration/             # SQL migration sau này
-├── templates/                # Giao diện Thymeleaf
-└── static/
-    ├── css/
-    └── js/
-src/test/java/vn/qlwebsite/    # Kiểm thử sau này
+```sh
+./mvnw -f web/pom.xml verify
+java -jar web/target/qlwebsite-0.1.0.jar
 ```
 
-Các thư mục trống dùng `.gitkeep` để được lưu trong Git. Dependency database, bảo mật, schema, entity, API, dashboard, checker và test nghiệp vụ sẽ được bổ sung khi bắt đầu triển khai.
+Mở **http://127.0.0.1:8080**. Nếu backend ở địa chỉ khác, truyền `--app.backend.url=http://dia-chi-backend:cong` khi chạy giao diện.
 
-## Git
+Giao diện sử dụng dữ liệu từ database của backend. Không tạo dữ liệu mẫu trong localStorage. Backend sử dụng các bảng `websites` và `uptime_check_logs` để lưu thông tin website và kết quả kiểm tra HTTP.
 
-- `target/`, dữ liệu chạy thử, cấu hình cá nhân, `.env` và file bí mật không được commit.
-- File kế hoạch cá nhân được giữ cục bộ và đã được loại khỏi Git bằng `.gitignore`.
-- GitHub Actions chạy `clean verify` trên Java 17 khi push hoặc mở pull request. Hiện chưa có test nghiệp vụ; bước verify kiểm tra việc biên dịch và đóng gói.
+## API và kiểm tra website
+
+- `GET /api/websites`: danh sách website.
+- `GET /api/websites/{id}`: chi tiết website.
+- `POST /api/websites`: thêm website.
+- `PUT /api/websites/{id}`: cập nhật website.
+- `DELETE /api/websites/{id}`: xóa website.
+- `POST /api/websites/{id}/check`: gửi HTTP GET tới URL đã đăng ký và lưu kết quả.
+- `GET /api/websites/{id}/logs`: tối đa 20 kết quả kiểm tra mới nhất.
+
+HTTP 200–399 được tính là thành công; timeout là 10 giây. Giao diện tải lại dữ liệu mỗi 10 giây. Kiểm tra URL hiện được kích hoạt thủ công; chưa có scheduler hoặc gửi cảnh báo.
+
+## Môi trường local hiện tại
+
+Phiên backend trên máy phát triển đang sử dụng H2 lưu trong `data/qlwebsite-local.mv.db` thông qua cấu hình ghi đè khi khởi động. Cấu hình mặc định trong repository vẫn là SQL Server. Thư mục `data/`, log và các artifact build được loại khỏi Git.
+
+Có thể mở thư mục gốc và thư mục `web/` thành hai project Maven trong NetBeans. Khi chạy backend, main class là `com.mycompany.do_an_ltm_2380600550.Do_An_LTM_2380600550`; giao diện dùng `vn.qlwebsite.QlWebsiteApplication`.

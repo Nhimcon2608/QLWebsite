@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="vi" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111111">
+  <meta name="description" content="Không gian quản lý và theo dõi website nội bộ.">
+  <meta name="_csrf" th:if="${_csrf != null}" th:content="${_csrf.token}">
+  <meta name="_csrf_header" th:if="${_csrf != null}" th:content="${_csrf.headerName}">
+  <title>QLWebsite — Giám sát website</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body th:attr="data-demo=${demo},data-backend=${backend}">
+  <a class="skip-link" href="#main">Đến nội dung chính</a>
+  <noscript><p class="notice">Vui lòng bật JavaScript để sử dụng dashboard.</p></noscript>
+  <div id="app"><div class="initial-loading">Đang mở không gian giám sát…</div></div>
+  <div id="toasts" class="toasts" aria-live="polite" aria-atomic="true"></div>
+  <dialog id="modal" aria-labelledby="modal-title"></dialog>
+</body>
+</html>
