@@ -4,8 +4,10 @@ import com.mycompany.do_an_ltm_2380600550.entity.UptimeCheckLog;
 import com.mycompany.do_an_ltm_2380600550.entity.Website;
 import com.mycompany.do_an_ltm_2380600550.repository.UptimeCheckLogRepository;
 import com.mycompany.do_an_ltm_2380600550.repository.WebsiteRepository;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -18,11 +20,16 @@ import java.util.Optional;
 @Service
 public class WebsiteService {
 
-    @Autowired
-    private WebsiteRepository websiteRepository;
+    private final WebsiteRepository websiteRepository;
+    private final UptimeCheckLogRepository logRepository;
+    private final AlertService alertService;
 
-    @Autowired
-    private UptimeCheckLogRepository logRepository;
+    public WebsiteService(WebsiteRepository websiteRepository, UptimeCheckLogRepository logRepository,
+                          AlertService alertService) {
+        this.websiteRepository = websiteRepository;
+        this.logRepository = logRepository;
+        this.alertService = alertService;
+    }
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
@@ -49,8 +56,15 @@ public class WebsiteService {
     }
 
     // Thực hiện kiểm tra trạng thái 1 website (Ping HTTP Request)
+    @Transactional
     public UptimeCheckLog pingWebsite(Website website) {
-        long startTime = System.currentTimeMillis();
+        website = websiteRepository.findByIdForUpdate(website.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Website không tồn tại."));
+        if (!Boolean.TRUE.equals(website.getIsActive())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Bật website trước khi kiểm tra.");
+        }
+        UptimeCheckLog previous = logRepository.findFirstByWebsiteIdOrderByIdDesc(website.getId()).orElse(null);
+        long startTime = System.nanoTime();
         Integer statusCode = null;
         boolean isUp = false;
         String errorMessage = null;
@@ -71,18 +85,25 @@ public class WebsiteService {
             } else {
                 errorMessage = "HTTP Error Status: " + statusCode;
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            errorMessage = "Kiểm tra bị gián đoạn.";
         } catch (Exception e) {
-            errorMessage = e.getMessage();
+            errorMessage = e.getMessage() != null && !e.getMessage().isBlank()
+                    ? e.getMessage() : e.getClass().getSimpleName() + ": Không thể kết nối đến website.";
         }
 
-        long responseTimeMs = System.currentTimeMillis() - startTime;
+        long responseTimeMs = Duration.ofNanos(System.nanoTime() - startTime).toMillis();
+        if (errorMessage != null && errorMessage.length() > 1000) errorMessage = errorMessage.substring(0, 1000);
 
         UptimeCheckLog log = new UptimeCheckLog(website, statusCode, responseTimeMs, isUp, errorMessage);
-        return logRepository.save(log);
+        log = logRepository.save(log);
+        alertService.recordTransition(previous, log);
+        return log;
     }
 
     // Lấy lịch sử kiểm tra của 1 website
     public List<UptimeCheckLog> getLogsByWebsiteId(Long websiteId) {
-        return logRepository.findTop20ByWebsiteIdOrderByCheckedAtDesc(websiteId);
+        return logRepository.findTop20ByWebsiteIdOrderByIdDesc(websiteId);
     }
 }

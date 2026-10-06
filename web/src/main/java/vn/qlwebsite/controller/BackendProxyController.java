@@ -31,13 +31,14 @@ public class BackendProxyController {
     public ResponseEntity<byte[]> forward(HttpServletRequest request,
                                           @RequestBody(required = false) byte[] body) {
         String path = request.getRequestURI().substring("/backend-api".length());
-        if (!path.matches("/websites(?:/[0-9]+(?:/(?:check|logs))?)?")) {
+        if (!path.matches("/(?:alerts|websites(?:/[0-9]+(?:/(?:check|logs))?)?)")) {
             return ResponseEntity.notFound().build();
         }
         if (!java.util.Set.of("GET", "POST", "PUT", "DELETE").contains(request.getMethod())) {
             return ResponseEntity.status(405).build();
         }
-        HttpRequest outgoing = HttpRequest.newBuilder(URI.create(backendUrl + "/api" + path))
+        String query = request.getQueryString() == null ? "" : "?" + request.getQueryString();
+        HttpRequest outgoing = HttpRequest.newBuilder(URI.create(backendUrl + "/api" + path + query))
                 .timeout(Duration.ofSeconds(18))
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json")

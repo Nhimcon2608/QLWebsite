@@ -55,7 +55,14 @@ export function createBackendAdapter({ raw, ApiError, pageOf, metrics }) {
       isActive: body.enabled ?? current.isActive ?? true };
   }
   return async function request(path, { method = "GET", body, params = {} } = {}) {
-    if (path === "/alerts" || /\/incidents$/.test(path))
+    if (path === "/alerts") {
+      const result = await raw(path, { params });
+      return { ...result, content: result.content.map((item) => ({
+        ...item, id: String(item.id), websiteId: String(item.websiteId),
+        createdAt: timestamp(item.createdAt),
+      })) };
+    }
+    if (/\/incidents$/.test(path))
       return { ...pageOf([], params.page, params.size), supported: false };
     if (path === "/dashboard/summary") {
       const websites = await all(), active = websites.filter((w) => w.enabled);
