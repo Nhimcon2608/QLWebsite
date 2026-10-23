@@ -268,7 +268,8 @@ class MonitoringFeaturesTest {
   @Test
   void downtimeExcludesOverlappingMaintenanceOnlyOnce() {
     var w = website();
-    var start = LocalDateTime.now(ZoneOffset.UTC).minusHours(2);
+    // Keep the range and persisted timestamps identical across database precisions.
+    var start = LocalDateTime.of(2026, 1, 15, 10, 0);
     var i = new Incident();
     i.setWebsiteId(w.getId());
     i.setFirstFailureAt(start);
