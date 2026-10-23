@@ -1,22 +1,28 @@
 # Giao diện QLWebsite
 
-Giao diện dashboard, quản lý website, lịch sử kiểm tra, biểu đồ và cảnh báo kết nối với API của ứng dụng backend ở thư mục gốc. Mặc định sử dụng dữ liệu thật từ backend và tắt demo.
+Spring Boot + Thymeleaf + JavaScript modules, mặc định dùng backend thật qua proxy `/backend-api`.
 
-## Chạy
-
-Khởi động backend tại `http://127.0.0.1:8082` theo hướng dẫn trong README ở thư mục gốc. Sau đó, từ thư mục gốc repository:
+Chạy toàn bộ từ thư mục gốc bằng `./scripts/run-local.sh`, hoặc build/chạy riêng:
 
 ```sh
 ./mvnw -f web/pom.xml verify
 java -jar web/target/qlwebsite-0.1.0.jar
 ```
 
-Mở `http://127.0.0.1:8080`. Đổi URL backend bằng `BACKEND_URL`, hoặc truyền `--app.backend.url=http://127.0.0.1:8082` khi chạy JAR.
+Mở **http://127.0.0.1:8080**. Backend mặc định `http://127.0.0.1:8082`, đổi qua `BACKEND_URL`.
 
-Các thao tác thêm/sửa website, bật/tắt theo dõi và kiểm tra thủ công gọi API qua `/backend-api`. Kết quả HTTP được lưu bởi backend trong database đã cấu hình. Không tạo website mẫu hoặc nhập dữ liệu localStorage vào database.
+- `/login`: đăng nhập; tài khoản mặc định `admin` / `admin123` được backend tự tạo khi database chưa có tài khoản.
+- `/`: dashboard.
+- `/websites`: quản lý, tìm theo nhóm/tag/môi trường, nhập CSV có xem trước.
+- `/websites/{id}`: cấu hình giám sát, lịch sử, biểu đồ/báo cáo CSV, SSL, sự cố/ghi chú và lịch bảo trì.
+- `/alerts`: cảnh báo DOWN/RECOVERY.
+- `/settings` cũ: chuyển về `/alerts`; trang Kênh thông báo đã được gỡ.
+- `/users`: tài khoản và phân quyền, dành cho ADMIN.
 
-Backend hiện cung cấp tối đa 20 kết quả gần nhất mỗi website. Giao diện tải lại dữ liệu mỗi 10 giây; kiểm tra HTTP được kích hoạt bằng nút “Kiểm tra ngay”. Chức năng kiểm tra theo lịch chưa được triển khai.
+Dashboard tải lại mỗi 10 giây; giám sát tự động chạy ở backend. Lịch sử/báo cáo được truy vấn từ database theo khoảng thời gian. Proxy chỉ cho phép các route định trước, chuyển tiếp riêng cookie QLSESSION và header CSRF, giữ Content-Type/Content-Disposition cho báo cáo CSV. Không cần mở CORS backend.
 
-Trang `/alerts` và khối Cảnh báo gần đây trên dashboard hiển thị cảnh báo DOWN/RECOVERY đã lưu trong database. Danh sách cảnh báo được phân trang qua `GET /backend-api/alerts`, mới nhất trước, và có liên kết tới chi tiết website.
+Xem README ở thư mục gốc cho cấu hình database và mô tả hành vi.
 
-`./mvnw -f web/pom.xml verify` chạy các kiểm thử API proxy và cấu hình dữ liệu thật mặc định.
+JavaScript/CSS được phục vụ qua đường dẫn có phiên bản nội dung (`/assets/v…/js/…`). Tất cả module dùng cùng tiền tố để tránh trộn file cũ và mới khi nâng cấp. Các trang HTML và URL tài nguyên cũ dùng `Cache-Control: no-store`.
+
+Mẫu nhập dữ liệu: [websites-sample.csv](src/main/resources/static/samples/websites-sample.csv), tải qua nút Nhập CSV → Tải CSV mẫu. Đường dẫn `/status` cũ chuyển về `/websites`.

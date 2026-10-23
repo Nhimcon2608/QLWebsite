@@ -4,57 +4,136 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "uptime_check_logs")
+@Table(
+    name = "uptime_check_logs",
+    indexes = @Index(name = "idx_logs_website_time", columnList = "website_id,checked_at"))
 public class UptimeCheckLog {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Long id;
 
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "website_id", nullable = false)
-    private Website website;
+  @ManyToOne(fetch = FetchType.EAGER)
+  @JoinColumn(name = "website_id", nullable = false)
+  private Website website;
 
-    private Integer statusCode; // HTTP Status Code (200, 404, 500,...)
-    private Long responseTimeMs; // Thời gian phản hồi (mili giây)
-    private Boolean isUp; // true = hoạt động bình thường, false = down
-    
-    @Column(length = 1000)
-    private String errorMessage; // Lưu lỗi nếu không kết nối được
+  private Integer statusCode; // HTTP Status Code (200, 404, 500,...)
+  private Long responseTimeMs; // Thời gian phản hồi (mili giây)
+  private Boolean isUp; // true = hoạt động bình thường, false = down
 
-    private LocalDateTime checkedAt = LocalDateTime.now();
+  @Column(length = 1000)
+  private String errorMessage; // Lưu lỗi nếu không kết nối được
 
-    public UptimeCheckLog() {
-    }
+  private LocalDateTime checkedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
 
-    public UptimeCheckLog(Website website, Integer statusCode, Long responseTimeMs, Boolean isUp, String errorMessage) {
-        this.website = website;
-        this.statusCode = statusCode;
-        this.responseTimeMs = responseTimeMs;
-        this.isUp = isUp;
-        this.errorMessage = errorMessage;
-        this.checkedAt = LocalDateTime.now();
-    }
+  public UptimeCheckLog() {}
 
-    // Getters & Setters
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
+  public UptimeCheckLog(
+      Website website, Integer statusCode, Long responseTimeMs, Boolean isUp, String errorMessage) {
+    this.website = website;
+    this.statusCode = statusCode;
+    this.responseTimeMs = responseTimeMs;
+    this.isUp = isUp;
+    this.errorMessage = errorMessage;
+    this.checkedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
+  }
 
-    public Website getWebsite() { return website; }
-    public void setWebsite(Website website) { this.website = website; }
+  private String triggerType = "MANUAL";
 
-    public Integer getStatusCode() { return statusCode; }
-    public void setStatusCode(Integer statusCode) { this.statusCode = statusCode; }
+  public String getTriggerType() {
+    return triggerType == null ? "MANUAL" : triggerType;
+  }
 
-    public Long getResponseTimeMs() { return responseTimeMs; }
-    public void setResponseTimeMs(Long responseTimeMs) { this.responseTimeMs = responseTimeMs; }
+  public void setTriggerType(String value) {
+    triggerType = value;
+  }
 
-    public Boolean getIsUp() { return isUp; }
-    public void setIsUp(Boolean isUp) { this.isUp = isUp; }
+  // Getters & Setters
+  public Long getId() {
+    return id;
+  }
 
-    public String getErrorMessage() { return errorMessage; }
-    public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+  public void setId(Long id) {
+    this.id = id;
+  }
 
-    public LocalDateTime getCheckedAt() { return checkedAt; }
-    public void setCheckedAt(LocalDateTime checkedAt) { this.checkedAt = checkedAt; }
+  public Website getWebsite() {
+    return website;
+  }
+
+  public void setWebsite(Website website) {
+    this.website = website;
+  }
+
+  public Integer getStatusCode() {
+    return statusCode;
+  }
+
+  public void setStatusCode(Integer statusCode) {
+    this.statusCode = statusCode;
+  }
+
+  public Long getResponseTimeMs() {
+    return responseTimeMs;
+  }
+
+  public void setResponseTimeMs(Long responseTimeMs) {
+    this.responseTimeMs = responseTimeMs;
+  }
+
+  public Boolean getIsUp() {
+    return isUp;
+  }
+
+  public void setIsUp(Boolean isUp) {
+    this.isUp = isUp;
+  }
+
+  public String getErrorMessage() {
+    return errorMessage;
+  }
+
+  public void setErrorMessage(String errorMessage) {
+    this.errorMessage = errorMessage;
+  }
+
+  public LocalDateTime getCheckedAt() {
+    return checkedAt;
+  }
+
+  public void setCheckedAt(LocalDateTime checkedAt) {
+    this.checkedAt = checkedAt;
+  }
+
+  private String checkType = "HTTP";
+  private String errorType;
+
+  @Column(length = 2000)
+  private String checkDetails;
+
+  public String getCheckType() {
+    return checkType == null ? "HTTP" : checkType;
+  }
+
+  public void setCheckType(String value) {
+    checkType = value;
+  }
+
+  public String getErrorType() {
+    return Boolean.TRUE.equals(isUp)
+        ? null
+        : errorType != null ? errorType : statusCode == null ? "CONNECTION_ERROR" : "HTTP_ERROR";
+  }
+
+  public void setErrorType(String value) {
+    errorType = value;
+  }
+
+  public String getCheckDetails() {
+    return checkDetails;
+  }
+
+  public void setCheckDetails(String value) {
+    checkDetails = value;
+  }
 }

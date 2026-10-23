@@ -3,6 +3,41 @@ export const BACKEND = document.body.dataset.backend === "true";
 export const DEMO = document.body.dataset.demo === "true";
 const KEY = "qlwebsite.demo.v1";
 let redirectingToLogin = false;
+export let currentUser = null;
+export async function initializeSession() {
+  if (!BACKEND) return true;
+  try {
+    currentUser = await rawRequest("/session");
+    return true;
+  } catch (error) {
+    if (error.status === 401) return false;
+    throw error;
+  }
+}
+export async function loadCsrf() {
+  const response = await fetch("/backend-api/csrf", {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  if (!response.ok)
+    throw new ApiError("Không lấy được phiên bảo mật.", response.status);
+  return response.json();
+}
+function normalizeDates(value) {
+  if (Array.isArray(value)) return value.map(normalizeDates);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        typeof item === "string" &&
+        /^\d{4}-\d\d-\d\dT\d\d:\d\d/.test(item) &&
+        !/(?:Z|[+-]\d\d:\d\d)$/.test(item)
+          ? item + "Z"
+          : normalizeDates(item),
+      ]),
+    );
+  return value;
+}
 const iso = (n) => new Date(n).toISOString();
 const pageOf = (items, page = 0, size = 8) => ({
   content: items.slice(page * size, (page + 1) * size),
@@ -169,7 +204,7 @@ function read() {
   }
   const data = seed();
   write(data);
-  return data;
+  return normalizeDates(data);
 }
 function write(data) {
   try {
@@ -214,7 +249,6 @@ export function validateWebsite(input) {
     ["slowThresholdMs", 1, 59999, "Ngưỡng chậm"],
     ["failureThreshold", 1, 10, "Ngưỡng lỗi"],
   ]) {
-    if (BACKEND && field !== "intervalSeconds") continue;
     if (
       !Number.isInteger(input[field]) ||
       input[field] < min ||
@@ -222,7 +256,7 @@ export function validateWebsite(input) {
     )
       errors[field] = `${label} phải là số nguyên từ ${min} đến ${max}.`;
   }
-  if (BACKEND) return errors;
+
   if (input.slowThresholdMs >= input.timeoutMs)
     errors.slowThresholdMs = "Ngưỡng chậm phải nhỏ hơn timeout.";
   if (!validCodes(input.expectedCodes || ""))
@@ -469,48 +503,53 @@ async function demoRequest(path, method, body, options) {
     );
   throw new ApiError("Không tìm thấy dữ liệu.", 404);
 }
-const backendRequest = createBackendAdapter({ raw: rawRequest, ApiError, pageOf, metrics });
+const backendRequest = createBackendAdapter({
+  raw: rawRequest,
+  ApiError,
+  pageOf,
+  metrics,
+});
 export async function request(path, options = {}) {
   if (BACKEND) return backendRequest(path, options);
   return rawRequest(path, options);
 }
-async function rawRequest(
-  path,
-  { method = "GET", body, params = {} } = {},
-) {
+async function rawRequest(path, { method = "GET", body, params = {} } = {}) {
   if (DEMO) return demoRequest(path, method, body, params);
   const query = new URLSearchParams(
     Object.entries(params).filter(([, value]) => value !== "" && value != null),
   );
   const headers = { Accept: "application/json" };
   if (body) headers["Content-Type"] = "application/json";
-  const csrf = document.querySelector('meta[name="_csrf"]')?.content;
-  if (csrf)
-    headers[
-      document.querySelector('meta[name="_csrf_header"]')?.content ||
-        "X-CSRF-TOKEN"
-    ] = csrf;
+  if (BACKEND && !["GET", "HEAD"].includes(method)) {
+    const csrf = await loadCsrf();
+    headers[csrf.headerName] = csrf.token;
+  }
   let response;
   try {
-    response = await fetch(`${BACKEND ? "/backend-api" : "/api"}${path}${query.size ? `?${query}` : ""}`, {
-      method,
-      headers,
-      credentials: "same-origin",
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(20000),
-    });
+    response = await fetch(
+      `${BACKEND ? "/backend-api" : "/api"}${path}${query.size ? `?${query}` : ""}`,
+      {
+        method,
+        headers,
+        credentials: "same-origin",
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(75000),
+      },
+    );
   } catch {
     throw new ApiError(
       "Không thể kết nối máy chủ. Kiểm tra kết nối và thử lại.",
       0,
     );
   }
-  if (response.status === 204) return null;
+  if (response.status === 204 || (method === "DELETE" && response.ok))
+    return null;
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     if (
       response.status === 401 &&
-      !(path === "/session" && method === "POST") &&
+      path !== "/session" &&
+      location.pathname !== "/login" &&
       !redirectingToLogin
     ) {
       redirectingToLogin = true;
@@ -523,5 +562,5 @@ async function rawRequest(
     );
   }
   if (!data) throw new ApiError("Máy chủ trả về dữ liệu không hợp lệ.", 502);
-  return data;
+  return normalizeDates(data);
 }

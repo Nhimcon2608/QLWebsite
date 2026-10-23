@@ -1,4 +1,18 @@
-import { DEMO, BACKEND, request, validateWebsite } from "./data.js";
+import {
+  DEMO,
+  BACKEND,
+  request,
+  validateWebsite,
+  currentUser,
+  initializeSession,
+} from "./data.js";
+import {
+  mountManagement,
+  enhanceView,
+  addWebsiteFields,
+  readCheckFields,
+  validateCheckFields,
+} from "./management.js";
 import { responseChart, bindChart } from "./chart.js";
 
 const paths = {
@@ -98,28 +112,33 @@ const statusNames = {
   UP: "Hoạt động",
   DOWN: "Ngừng hoạt động",
   SLOW: "Phản hồi chậm",
+  MAINTENANCE: "Đang bảo trì",
   UNKNOWN: "Chưa xác định",
   PAUSED: "Tạm dừng",
 };
 function badge(w) {
   const status = w.enabled === false ? "PAUSED" : w.currentStatus;
-  return `<span class="status ${status?.toLowerCase()}">${icon({ UP: "check", DOWN: "down", SLOW: "clock", UNKNOWN: "info", PAUSED: "pause" }[status])}${statusNames[status] || "Chưa xác định"}</span>`;
+  return `<span class="status ${status?.toLowerCase()}">${icon({ UP: "check", DOWN: "down", SLOW: "clock", MAINTENANCE: "clock", UNKNOWN: "info", PAUSED: "pause" }[status])}${statusNames[status] || "Chưa xác định"}</span>`;
 }
 const app = document.querySelector("#app"),
   modal = document.querySelector("#modal");
 const pathname = location.pathname.replace(/\/$/, "") || "/";
 const detailId = pathname.match(/^\/websites\/([^/]+)$/)?.[1];
-const view = detailId
-  ? "detail"
-  : pathname === "/websites"
-    ? "websites"
-    : pathname === "/alerts"
-      ? "alerts"
-      : pathname === "/login"
-        ? "login"
-        : "dashboard";
+const view = ["/users"].includes(pathname)
+  ? pathname.slice(1)
+  : detailId
+    ? "detail"
+    : pathname === "/websites"
+      ? "websites"
+      : pathname === "/alerts"
+        ? "alerts"
+        : pathname === "/login"
+          ? "login"
+          : "dashboard";
 const state = {
   search: "",
+  groupName: "",
+  environment: "",
   status: "",
   page: 0,
   range: "24h",
@@ -139,10 +158,17 @@ function rangeParams() {
   return {
     from: new Date(
       to.getTime() -
-        { "1h": 3600000, "24h": 86400000, "7d": 604800000 }[state.range],
+        { "1h": 3600000, "24h": 86400000, "7d": 604800000, "30d": 2592000000 }[
+          state.range
+        ],
     ).toISOString(),
     to: to.toISOString(),
-    bucket: state.range === "1h" ? "5m" : state.range === "7d" ? "1h" : "30m",
+    bucket:
+      state.range === "1h"
+        ? "5m"
+        : ["7d", "30d"].includes(state.range)
+          ? "1h"
+          : "30m",
   };
 }
 function toast(message) {
@@ -160,12 +186,16 @@ function shell() {
     websites: "Quản lý website",
     detail: "Chi tiết website",
     alerts: "Cảnh báo",
+    users: "Tài khoản",
   }[view];
   document.title = `${title} · QLWebsite`;
   app.innerHTML = `<button class="mobile-shade" aria-label="Đóng điều hướng"></button><aside class="sidebar" id="navigation"><a class="brand" href="/"> <span class="brand-mark">${icon("pulse")}</span>QLWebsite</a><div class="workspace"><span class="workspace-icon">${icon("server")}</span><div><strong>Không gian nội bộ</strong><span class="muted">Website monitoring</span></div></div><div class="nav-label">KHÔNG GIAN LÀM VIỆC</div><nav class="nav" aria-label="Điều hướng chính">${[
     ["dashboard", "/", "grid", "Tổng quan"],
     ["websites", "/websites", "globe", "Quản lý website"],
     ["alerts", "/alerts", "bell", "Cảnh báo"],
+    ...(BACKEND && currentUser?.role === "ADMIN"
+      ? [["users", "/users", "shield", "Tài khoản"]]
+      : []),
   ]
     .map(
       ([name, url, symbol, label]) =>
@@ -173,7 +203,7 @@ function shell() {
     )
     .join(
       "",
-    )}</nav><div class="sidebar-bottom"><div class="account"><span class="avatar">${DEMO ? "DM" : "AD"}</span><div class="account-text"><strong>${DEMO ? "Demo workspace" : BACKEND ? "Dữ liệu cục bộ" : "Quản trị viên"}</strong>${DEMO ? "" : "<small>Không gian nội bộ</small>"}</div><button class="icon-button" id="logout" aria-label="${DEMO ? "Về màn hình bắt đầu" : "Đăng xuất"}" title="${DEMO ? "Màn hình bắt đầu" : "Đăng xuất"}">${icon("logout")}</button></div></div></aside><div class="main-shell"><header class="topbar"><div class="breadcrumb"><button class="icon-button mobile-menu" aria-controls="navigation" aria-expanded="false" aria-label="Mở điều hướng">${icon("menu")}</button><span>Không gian nội bộ</span><span>/</span><b>${title}</b></div><div class="topbar-right"><span class="live-label"><span class="live-dot"></span>${DEMO ? "Dữ liệu demo" : BACKEND ? "Dữ liệu thật · Kiểm tra thủ công" : "Tự cập nhật mỗi 10 giây"}</span><a class="icon-button" href="/alerts" aria-label="Xem cảnh báo">${icon("bell")}</a><span class="avatar">${DEMO ? "DM" : "AD"}</span></div></header><main class="content" id="main" tabindex="-1"><div id="heading"></div><div id="error" role="alert"></div><div id="content"><div class="skeleton-cards">${Array.from({ length: 4 }, () => '<div><p class="skeleton"></p><p class="skeleton"></p></div>').join("")}</div><div class="loading">Đang tải dữ liệu…</div></div><footer class="footer"><span>© ${new Date().getFullYear()} QLWebsite · Không gian giám sát nội bộ</span><span id="last-updated">${icon("refresh")} Đang đồng bộ dữ liệu</span></footer></main></div>`;
+    )}</nav><div class="sidebar-bottom"><div class="account"><span class="avatar">${DEMO ? "DM" : "AD"}</span><div class="account-text"><strong>${DEMO ? "Demo workspace" : BACKEND ? esc(currentUser?.username || "Tài khoản") : "Quản trị viên"}</strong>${DEMO ? "" : "<small>Không gian nội bộ</small>"}</div><button class="icon-button" id="logout" aria-label="${DEMO ? "Về màn hình bắt đầu" : "Đăng xuất"}" title="${DEMO ? "Màn hình bắt đầu" : "Đăng xuất"}">${icon("logout")}</button></div></div></aside><div class="main-shell"><header class="topbar"><div class="breadcrumb"><button class="icon-button mobile-menu" aria-controls="navigation" aria-expanded="false" aria-label="Mở điều hướng">${icon("menu")}</button><span>Không gian nội bộ</span><span>/</span><b>${title}</b></div><div class="topbar-right"><span class="live-label"><span class="live-dot"></span>${DEMO ? "Dữ liệu demo" : BACKEND ? "Giám sát tự động" : "Tự cập nhật mỗi 10 giây"}</span><a class="icon-button" href="/alerts" aria-label="Xem cảnh báo">${icon("bell")}</a><span class="avatar">${DEMO ? "DM" : "AD"}</span></div></header><main class="content" id="main" tabindex="-1"><div id="heading"></div><div id="error" role="alert"></div><div id="content"><div class="skeleton-cards">${Array.from({ length: 4 }, () => '<div><p class="skeleton"></p><p class="skeleton"></p></div>').join("")}</div><div class="loading">Đang tải dữ liệu…</div></div><footer class="footer"><span>© ${new Date().getFullYear()} QLWebsite · Không gian giám sát nội bộ</span><span id="last-updated">${icon("refresh")} Đang đồng bộ dữ liệu</span></footer></main></div>`;
   document.querySelector(".mobile-menu").onclick = () => toggleMenu();
   document.querySelector(".mobile-shade").onclick = () => toggleMenu(false);
   document.addEventListener("keydown", (e) => {
@@ -181,7 +211,7 @@ function shell() {
   });
   document.querySelector("#logout").onclick = async () => {
     try {
-      if (!DEMO && !BACKEND) await request("/session", { method: "DELETE" });
+      if (!DEMO) await request("/session", { method: "DELETE" });
       location.assign("/login");
     } catch (e) {
       toast(e.message);
@@ -215,6 +245,7 @@ function drawHeading(w) {
       "Trung tâm cảnh báo",
       "Theo dõi sự cố và các lần khôi phục kết nối.",
     ],
+    users: ["QUẢN TRỊ", "Tài khoản", "Quản lý tài khoản và phân quyền."],
     detail: [
       "CHI TIẾT WEBSITE",
       w?.name || "Chi tiết website",
@@ -223,7 +254,7 @@ function drawHeading(w) {
   };
   const [eyebrow, title, description] = headings[view];
   document.querySelector("#heading").innerHTML =
-    `${view === "detail" ? `<a class="back-link" href="/websites">${icon("left")}Tất cả website</a>` : ""}<div class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${esc(title)}</h1><p>${view === "detail" && w ? `<a href="${safeUrl(w.url)}" target="_blank" rel="noopener noreferrer">${esc(description)} ↗</a>` : esc(description)}</p></div><div class="actions"><button class="button" data-action="refresh">${icon("refresh")}Làm mới</button>${view === "detail" && w ? `<button class="button" data-action="edit" data-id="${esc(w.id)}">${icon("edit")}Chỉnh sửa</button><button class="button primary" data-action="check" data-id="${esc(w.id)}" ${w.enabled ? "" : "disabled"}>${icon("pulse")}${DEMO ? "Kiểm tra demo" : "Kiểm tra ngay"}</button>` : view !== "alerts" ? `<button class="button primary" data-action="add">${icon("plus")}Thêm website</button>` : ""}</div></div>`;
+    `${view === "detail" ? `<a class="back-link" href="/websites">${icon("left")}Tất cả website</a>` : ""}<div class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${esc(title)}</h1><p>${view === "detail" && w ? `<a href="${safeUrl(w.url)}" target="_blank" rel="noopener noreferrer">${esc(description)} ↗</a>` : esc(description)}</p></div><div class="actions"><button class="button" data-action="refresh">${icon("refresh")}Làm mới</button>${view === "detail" && w ? `<button class="button" data-action="edit" data-id="${esc(w.id)}">${icon("edit")}Chỉnh sửa</button><button class="button primary" data-action="check" data-id="${esc(w.id)}" ${w.enabled ? "" : "disabled"}>${icon("pulse")}${DEMO ? "Kiểm tra demo" : "Kiểm tra ngay"}</button>` : !["alerts", "users"].includes(view) ? `<button class="button primary" data-action="add">${icon("plus")}Thêm website</button>` : ""}</div></div>`;
 }
 function stat(label, value, suffix, foot, symbol, highlight = false) {
   return `<div class="stat ${highlight ? "highlight" : ""}"><div class="stat-label">${label}<span class="stat-icon">${icon(symbol)}</span></div><div class="stat-value mono">${value}<small>${suffix}</small></div><div class="stat-foot">${foot}</div></div>`;
@@ -233,6 +264,7 @@ function rangeButtons() {
     ["1h", "1 giờ"],
     ["24h", "24 giờ"],
     ["7d", "7 ngày"],
+    ["30d", "30 ngày"],
   ]
     .map(
       ([value, label]) =>
@@ -260,7 +292,7 @@ function rows(websites, management = false) {
             .map((s) => s[0])
             .join("")
             .toUpperCase(),
-        )}</span><div><a class="website-name" href="${websiteLink(w.id)}">${esc(w.name)}</a><span class="website-url">${esc(host(w.url))}</span></div></div></td><td>${badge(w)}${!management ? `<span class="stale" title="${esc(date(w.lastCheckedAt))}">${relative(w.lastCheckedAt)}</span>` : ""}${w.stale ? '<span class="stale">Dữ liệu quá cũ</span>' : ""}${w.enabled && w.consecutiveFailures > 0 && w.currentStatus !== "DOWN" ? `<span class="stale">Lỗi ${w.consecutiveFailures}/${w.failureThreshold}</span>` : ""}</td><td class="latency">${fmt(w.responseTimeMs)} ${w.responseTimeMs == null ? "" : "<small>ms</small>"}</td>${management ? `<td class="tiny muted" title="${esc(date(w.lastCheckedAt))}">${relative(w.lastCheckedAt)}</td><td><div class="row-actions"><button class="icon-button" data-action="check" data-id="${esc(w.id)}" aria-label="Kiểm tra ${esc(w.name)}" title="${DEMO ? "Kiểm tra mô phỏng" : "Kiểm tra ngay"}" ${w.enabled ? "" : "disabled"}>${icon("pulse")}</button><button class="icon-button" data-action="toggle" data-id="${esc(w.id)}" aria-label="${w.enabled ? "Tạm dừng" : "Bật"} ${esc(w.name)}" title="${w.enabled ? "Tạm dừng" : "Bật giám sát"}">${icon(w.enabled ? "pause" : "play")}</button><button class="icon-button" data-action="edit" data-id="${esc(w.id)}" aria-label="Sửa ${esc(w.name)}" title="Chỉnh sửa">${icon("edit")}</button><button class="icon-button" data-action="archive" data-id="${esc(w.id)}" aria-label="Lưu trữ ${esc(w.name)}" title="Lưu trữ">${icon("archive")}</button></div></td>` : `<td><a class="icon-button" href="${websiteLink(w.id)}" aria-label="Chi tiết ${esc(w.name)}">${icon("right")}</a></td>`}</tr>`,
+        )}</span><div><a class="website-name" href="${websiteLink(w.id)}">${esc(w.name)}</a><span class="website-url">${esc(host(w.url))}</span><span class="website-meta">${esc([w.checkType === "DNS" ? `DNS ${w.dnsRecordType}` : w.checkType === "TCP" ? `TCP :${w.tcpPort}` : "HTTP", w.groupName, w.environment, w.tags].filter(Boolean).join(" · "))}</span></div></div></td><td>${badge(w)}${!management ? `<span class="stale" title="${esc(date(w.lastCheckedAt))}">${relative(w.lastCheckedAt)}</span>` : ""}${w.stale ? '<span class="stale">Dữ liệu quá cũ</span>' : ""}${w.enabled && w.consecutiveFailures > 0 && w.currentStatus !== "DOWN" ? `<span class="stale">Lỗi ${w.consecutiveFailures}/${w.failureThreshold}</span>` : ""}</td><td class="latency">${fmt(w.responseTimeMs)} ${w.responseTimeMs == null ? "" : "<small>ms</small>"}</td>${management ? `<td class="tiny muted" title="${esc(date(w.lastCheckedAt))}">${relative(w.lastCheckedAt)}</td><td><div class="row-actions"><button class="icon-button" data-action="check" data-id="${esc(w.id)}" aria-label="Kiểm tra ${esc(w.name)}" title="${DEMO ? "Kiểm tra mô phỏng" : "Kiểm tra ngay"}" ${w.enabled ? "" : "disabled"}>${icon("pulse")}</button><button class="icon-button" data-action="toggle" data-id="${esc(w.id)}" aria-label="${w.enabled ? "Tạm dừng" : "Bật"} ${esc(w.name)}" title="${w.enabled ? "Tạm dừng" : "Bật giám sát"}">${icon(w.enabled ? "pause" : "play")}</button><button class="icon-button" data-action="edit" data-id="${esc(w.id)}" aria-label="Sửa ${esc(w.name)}" title="Chỉnh sửa">${icon("edit")}</button><button class="icon-button" data-action="archive" data-id="${esc(w.id)}" aria-label="Lưu trữ ${esc(w.name)}" title="Lưu trữ">${icon("archive")}</button></div></td>` : `<td><a class="icon-button" href="${websiteLink(w.id)}" aria-label="Chi tiết ${esc(w.name)}">${icon("right")}</a></td>`}</tr>`,
     )
     .join("");
 }
@@ -274,7 +306,7 @@ function alertItems(alerts) {
 }
 function renderDashboard(data) {
   const { summary: s, websites, alerts, metrics } = data;
-  return `${s.down ? `<div class="notice">${icon("info")}<div><strong>${s.down} website đang ngừng hoạt động</strong><p>Kiểm tra chi tiết để xem kết quả và nguyên nhân gần nhất.</p></div><a class="text-button" href="/websites?status=DOWN">Xem website ${icon("arrow")}</a></div>` : ""}<div class="stats">${stat("Tổng website", fmt(s.total), "website", `${s.active} đang giám sát · ${s.paused} tạm dừng`, "globe")}${stat("Đang hoạt động", fmt(s.up), "website", `${icon("check")} Trạng thái đã xác nhận: UP`, "check", true)}${stat("Cần chú ý", fmt(s.down + s.slow), "website", `${s.down} ngừng hoạt động · ${s.slow} phản hồi chậm`, "pulse")}${stat("Kiểm tra thành công", fmt(s.successRate), s.successRate == null ? "" : "%", `${fmt(s.sampleCount)} mẫu trong ${state.range === "1h" ? "1 giờ" : state.range === "7d" ? "7 ngày" : "24 giờ"}`, "shield")}</div>${chartPanel(metrics, websites.content)}<div class="dashboard-bottom"><section class="panel"><div class="panel-header"><div><h2>Website đang theo dõi</h2><p>Trạng thái mới nhất của các website nội bộ</p></div><a class="text-button" href="/websites">Tất cả ${icon("arrow")}</a></div>${websites.content.length ? `<div class="table-wrap"><table><thead><tr><th>Website</th><th>Trạng thái</th><th>Phản hồi</th><th><span class="sr-only">Chi tiết</span></th></tr></thead><tbody>${rows(websites.content.slice(0, 5))}</tbody></table></div>` : empty("Bắt đầu với website đầu tiên", "Thêm một website để thiết lập không gian giám sát.", `<button class="button primary" data-action="add">${icon("plus")}Thêm website</button>`)}<div class="table-footer"><span>${Math.min(websites.content.length, 5)} / ${websites.totalElements} website</span><span>${s.unknown} chưa xác định · ${s.stale} dữ liệu cũ</span></div></section><section class="panel"><div class="panel-header"><div><h2>Cảnh báo gần đây</h2><p>Những thay đổi cần quan tâm</p></div>${icon("bell")}</div><div class="alert-list">${alerts.content.length ? alertItems(alerts.content.slice(0, 3)) : empty("Chưa có cảnh báo", "Các thông báo mới sẽ xuất hiện tại đây.")}</div><div class="alert-summary">${icon("info")}${DEMO ? "Thông báo từ dữ liệu mô phỏng" : "Cảnh báo khi DOWN hoặc phục hồi"}</div><div class="table-footer"><a class="text-button" href="/alerts">Xem tất cả cảnh báo ${icon("arrow")}</a></div></section></div>`;
+  return `${s.down ? `<div class="notice">${icon("info")}<div><strong>${s.down} website đang ngừng hoạt động</strong><p>Kiểm tra chi tiết để xem kết quả và nguyên nhân gần nhất.</p></div><a class="text-button" href="/websites?status=DOWN">Xem website ${icon("arrow")}</a></div>` : ""}<div class="stats">${stat("Tổng website", fmt(s.total), "website", `${s.active} đang giám sát · ${s.paused} tạm dừng`, "globe")}${stat("Đang hoạt động", fmt(s.up), "website", `${icon("check")} Trạng thái đã xác nhận: UP`, "check", true)}${stat("Cần chú ý", fmt(s.down + s.slow), "website", `${s.down} ngừng hoạt động · ${s.slow} phản hồi chậm`, "pulse")}${stat("Kiểm tra thành công", fmt(s.successRate), s.successRate == null ? "" : "%", `${fmt(s.sampleCount)} mẫu trong ${state.range === "1h" ? "1 giờ" : state.range === "7d" ? "7 ngày" : state.range === "30d" ? "30 ngày" : "24 giờ"}`, "shield")}</div>${chartPanel(metrics, websites.content)}<div class="dashboard-bottom"><section class="panel"><div class="panel-header"><div><h2>Website đang theo dõi</h2><p>Trạng thái mới nhất của các website nội bộ</p></div><a class="text-button" href="/websites">Tất cả ${icon("arrow")}</a></div>${websites.content.length ? `<div class="table-wrap"><table><thead><tr><th>Website</th><th>Trạng thái</th><th>Phản hồi</th><th><span class="sr-only">Chi tiết</span></th></tr></thead><tbody>${rows(websites.content.slice(0, 5))}</tbody></table></div>` : empty("Bắt đầu với website đầu tiên", "Thêm một website để thiết lập không gian giám sát.", `<button class="button primary" data-action="add">${icon("plus")}Thêm website</button>`)}<div class="table-footer"><span>${Math.min(websites.content.length, 5)} / ${websites.totalElements} website</span><span>${s.unknown} chưa xác định · ${s.stale} dữ liệu cũ</span></div></section><section class="panel"><div class="panel-header"><div><h2>Cảnh báo gần đây</h2><p>Những thay đổi cần quan tâm</p></div>${icon("bell")}</div><div class="alert-list">${alerts.content.length ? alertItems(alerts.content.slice(0, 3)) : empty("Chưa có cảnh báo", "Các thông báo mới sẽ xuất hiện tại đây.")}</div><div class="alert-summary">${icon("info")}${DEMO ? "Thông báo từ dữ liệu mô phỏng" : "Cảnh báo khi DOWN hoặc phục hồi"}</div><div class="table-footer"><a class="text-button" href="/alerts">Xem tất cả cảnh báo ${icon("arrow")}</a></div></section></div>`;
 }
 function renderWebsites(data) {
   const list = data.websites,
@@ -288,20 +320,31 @@ function renderWebsites(data) {
     )
     .join(
       "",
-    )}</select></div>${list.content.length ? `<div class="table-wrap"><table><thead><tr><th>Website</th><th>Trạng thái</th><th>Phản hồi</th><th>Kiểm tra gần nhất</th><th style="text-align:right">Thao tác</th></tr></thead><tbody>${rows(list.content, true)}</tbody></table></div>` : empty(state.search || state.status ? "Không tìm thấy website" : "Chưa có website nào", state.search || state.status ? "Thử thay đổi từ khóa hoặc bộ lọc." : "Thêm website đầu tiên để bắt đầu.", `<button class="button" data-action="${state.search || state.status ? "clear-filters" : "add"}">${state.search || state.status ? "Xóa bộ lọc" : "Thêm website"}</button>`)}<div class="table-footer"><span>${list.totalElements ? `${list.number * 8 + 1}–${Math.min((list.number + 1) * 8, list.totalElements)} / ${list.totalElements} website` : "0 website"}</span>${pagination(list)}</div></section>`;
+    )}</select></div>${list.content.length ? `<div class="table-wrap"><table><thead><tr><th>Website</th><th>Trạng thái</th><th>Phản hồi</th><th>Kiểm tra gần nhất</th><th style="text-align:right">Thao tác</th></tr></thead><tbody>${rows(list.content, true)}</tbody></table></div>` : empty(state.search || state.status || state.groupName || state.environment ? "Không tìm thấy website" : "Chưa có website nào", state.search || state.status || state.groupName || state.environment ? "Thử thay đổi từ khóa hoặc bộ lọc." : "Thêm website đầu tiên để bắt đầu.", `<button class="button" data-action="${state.search || state.status || state.groupName || state.environment ? "clear-filters" : "add"}">${state.search || state.status || state.groupName || state.environment ? "Xóa bộ lọc" : "Thêm website"}</button>`)}<div class="table-footer"><span>${list.totalElements ? `${list.number * 8 + 1}–${Math.min((list.number + 1) * 8, list.totalElements)} / ${list.totalElements} website` : "0 website"}</span>${pagination(list)}</div></section>`;
 }
 function renderHistory(history) {
-  return `<section class="panel"><div class="panel-header"><div><h2>Lịch sử kiểm tra</h2><p>Kết quả trong khoảng thời gian đã chọn trên biểu đồ</p></div><label class="sr-only" for="history-result">Lọc kết quả kiểm tra</label><select id="history-result" style="width:155px"><option value="">Tất cả kết quả</option><option value="SUCCESS" ${state.historyResult === "SUCCESS" ? "selected" : ""}>Thành công</option><option value="FAILURE" ${state.historyResult === "FAILURE" ? "selected" : ""}>Thất bại</option></select></div>${history.content.length ? `<div class="table-wrap"><table><thead><tr><th>Thời điểm</th><th>Kết quả</th><th>HTTP</th><th>Phản hồi</th><th>Chi tiết</th></tr></thead><tbody>${history.content.map((h) => `<tr><td class="tiny mono">${esc(date(h.completedAt))}<span class="website-url">${h.triggerType === "MANUAL" ? "Thủ công" : "Theo lịch"}</span></td><td><span class="status ${h.success ? "" : "down"}">${icon(h.success ? "check" : "down")}${h.success ? "Thành công" : "Thất bại"}</span></td><td class="tiny mono">${h.httpCode ?? "—"}</td><td class="latency">${fmt(h.responseTimeMs)} ${h.responseTimeMs == null ? "" : "<small>ms</small>"}</td><td class="tiny muted" title="${esc(h.errorMessage || "")}">${esc(h.errorType || "—")}${!h.success ? `<span class="website-url">Đã chờ ${fmt(h.elapsedMs)} ms</span>` : ""}</td></tr>`).join("")}</tbody></table></div>` : empty("Chưa có kết quả phù hợp", "Thử chọn khoảng thời gian hoặc bộ lọc khác.")}<div class="table-footer"><span>${fmt(history.totalElements)} kết quả</span>${pagination(history, "historyPage")}</div></section>`;
+  return `<section class="panel"><div class="panel-header"><div><h2>Lịch sử kiểm tra</h2><p>Kết quả trong khoảng thời gian đã chọn trên biểu đồ</p></div><label class="sr-only" for="history-result">Lọc kết quả kiểm tra</label><select id="history-result" style="width:155px"><option value="">Tất cả kết quả</option><option value="SUCCESS" ${state.historyResult === "SUCCESS" ? "selected" : ""}>Thành công</option><option value="FAILURE" ${state.historyResult === "FAILURE" ? "selected" : ""}>Thất bại</option></select></div>${history.content.length ? `<div class="table-wrap"><table><thead><tr><th>Thời điểm</th><th>Kết quả</th><th>Loại / HTTP</th><th>Phản hồi</th><th>Chi tiết</th></tr></thead><tbody>${history.content.map((h) => `<tr><td class="tiny mono">${esc(date(h.completedAt))}<span class="website-url">${h.triggerType === "MANUAL" ? "Thủ công" : "Theo lịch"}</span></td><td><span class="status ${h.success ? "" : "down"}">${icon(h.success ? "check" : "down")}${h.success ? "Thành công" : "Thất bại"}</span></td><td class="tiny mono">${esc(h.checkType || "HTTP")} ${h.httpCode ?? ""}</td><td class="latency">${fmt(h.responseTimeMs)} ${h.responseTimeMs == null ? "" : "<small>ms</small>"}</td><td class="tiny muted" title="${esc(h.errorMessage || "")}">${esc(h.errorType || "—")}<span class="website-url">${esc(h.errorMessage || h.checkDetails || "")}</span>${!h.success ? `<span class="website-url">Đã chờ ${fmt(h.elapsedMs)} ms</span>` : ""}</td></tr>`).join("")}</tbody></table></div>` : empty("Chưa có kết quả phù hợp", "Thử chọn khoảng thời gian hoặc bộ lọc khác.")}<div class="table-footer"><span>${fmt(history.totalElements)} kết quả</span>${pagination(history, "historyPage")}</div></section>`;
 }
 function renderDetail(data) {
   const { website: w, metrics, history, incidents } = data;
   const latest = w.latestResult;
-  return `${w.stale ? `<div class="notice">${icon("clock")}<div><strong>Dữ liệu đã quá thời gian cập nhật</strong><p>Trạng thái đang hiển thị là trạng thái được xác nhận gần nhất.</p></div></div>` : ""}${w.enabled && w.consecutiveFailures > 0 ? `<div class="notice">${icon("info")}<div><strong>${w.currentStatus === "DOWN" ? "Website đang ngừng hoạt động" : `Ghi nhận lỗi ${w.consecutiveFailures}/${w.failureThreshold} lần liên tiếp`}</strong><p>${esc(latest?.errorMessage || latest?.errorType || "Xem lịch sử kiểm tra để biết thêm chi tiết.")}</p></div></div>` : ""}<div class="stats">${stat("Trạng thái hiện tại", badge(w), "", `Kiểm tra: ${relative(w.lastCheckedAt)}`, "globe", false)}${stat("Phản hồi gần nhất", fmt(w.responseTimeMs), "ms", `HTTP ${latest?.httpCode ?? "—"} · ${latest ? (latest.success ? "Thành công" : "Thất bại") : "Chưa có kết quả"}`, "pulse", true)}${stat("Phản hồi trung bình", fmt(metrics.averageResponseTimeMs), "ms", "Các mẫu có phản hồi HTTP trong khoảng", "clock")}${stat("Kiểm tra thành công", fmt(metrics.successRate), metrics.successRate == null ? "" : "%", `${fmt(metrics.successCount)} / ${fmt(metrics.sampleCount)} mẫu thành công`, "shield")}</div><div class="detail-grid"><div>${chartPanel(metrics)}${renderHistory(history)}<section class="panel"><div class="panel-header"><div><h2>Lịch sử sự cố</h2><p>Các sự cố đã xác nhận của website</p></div></div>${incidents.content.length ? incidents.content.map((i) => `<div class="incident"><div><strong>${esc(i.reason)}</strong><p>Bắt đầu: ${esc(date(i.firstFailureAt))}</p><p>Phát hiện: ${esc(date(i.detectedAt))}</p>${i.resolvedAt ? `<p>Kết thúc: ${esc(date(i.resolvedAt))}</p>` : ""}</div><span class="status ${i.status === "OPEN" ? "down" : ""}">${i.status === "OPEN" ? "Đang diễn ra" : i.status === "MONITORING_STOPPED" ? "Đã dừng giám sát" : "Đã khôi phục"}</span></div>`).join("") : BACKEND ? empty("Chưa hỗ trợ quản lý sự cố", "Xem kết quả thực tế trong lịch sử kiểm tra phía trên.") : empty("Chưa ghi nhận sự cố", "Các sự cố sẽ hiển thị khi đủ ngưỡng lỗi.")}<div class="table-footer"><span>${incidents.totalElements} sự cố</span>${pagination(incidents, "incidentPage")}</div></section></div><aside><section class="panel"><div class="panel-header"><h2>Cấu hình giám sát</h2><button class="icon-button" data-action="edit" data-id="${esc(w.id)}" aria-label="Sửa cấu hình">${icon("edit")}</button></div><dl class="config-list">${[
+  return `${w.stale ? `<div class="notice">${icon("clock")}<div><strong>Dữ liệu đã quá thời gian cập nhật</strong><p>Trạng thái đang hiển thị là trạng thái được xác nhận gần nhất.</p></div></div>` : ""}${w.enabled && w.consecutiveFailures > 0 ? `<div class="notice">${icon("info")}<div><strong>${w.currentStatus === "DOWN" ? "Website đang ngừng hoạt động" : `Ghi nhận lỗi ${w.consecutiveFailures}/${w.failureThreshold} lần liên tiếp`}</strong><p>${esc(latest?.errorMessage || latest?.errorType || "Xem lịch sử kiểm tra để biết thêm chi tiết.")}</p></div></div>` : ""}<div class="stats">${stat("Trạng thái hiện tại", badge(w), "", `Kiểm tra: ${relative(w.lastCheckedAt)}`, "globe", false)}${stat("Phản hồi gần nhất", fmt(w.responseTimeMs), "ms", `${w.checkType && w.checkType !== "HTTP" ? w.checkType : `HTTP ${latest?.httpCode ?? "—"}`} · ${latest ? (latest.success ? "Thành công" : "Thất bại") : "Chưa có kết quả"}`, "pulse", true)}${stat("Phản hồi trung bình", fmt(metrics.averageResponseTimeMs), "ms", "Các mẫu có phản hồi HTTP / DNS / TCP trong khoảng", "clock")}${stat("Kiểm tra thành công", fmt(metrics.successRate), metrics.successRate == null ? "" : "%", `${fmt(metrics.successCount)} / ${fmt(metrics.sampleCount)} mẫu thành công`, "shield")}</div><div class="detail-grid"><div>${chartPanel(metrics)}${renderHistory(history)}<section class="panel"><div class="panel-header"><div><h2>Lịch sử sự cố</h2><p>Các sự cố đã xác nhận của website</p></div></div>${incidents.content.length ? incidents.content.map((i) => `<div class="incident"><div><strong>${esc(i.reason)}</strong><p>Bắt đầu: ${esc(date(i.firstFailureAt))}</p><p>Phát hiện: ${esc(date(i.detectedAt))}</p>${i.resolvedAt ? `<p>Kết thúc: ${esc(date(i.resolvedAt))}</p>` : ""}</div><span class="status ${i.status === "OPEN" ? "down" : ""}">${i.status === "OPEN" ? "Đang diễn ra" : i.status === "MONITORING_STOPPED" ? "Đã dừng giám sát" : "Đã khôi phục"}</span></div>`).join("") : empty("Chưa ghi nhận sự cố", "Các sự cố sẽ hiển thị khi đủ ngưỡng lỗi.")}<div class="table-footer"><span>${incidents.totalElements} sự cố</span>${pagination(incidents, "incidentPage")}</div></section></div><aside><section class="panel"><div class="panel-header"><h2>Cấu hình giám sát</h2><button class="icon-button" data-action="edit" data-id="${esc(w.id)}" aria-label="Sửa cấu hình">${icon("edit")}</button></div><dl class="config-list">${[
     ["Chu kỳ kiểm tra", `${fmt(w.intervalSeconds)} giây`],
     ["Timeout", `${fmt(w.timeoutMs)} ms`],
     ["Ngưỡng chậm", `${fmt(w.slowThresholdMs)} ms`],
     ["Ngưỡng lỗi", `${w.failureThreshold} lần liên tiếp`],
-    ["HTTP chấp nhận", w.expectedCodes],
+    [
+      w.checkType === "DNS"
+        ? "Bản ghi DNS"
+        : w.checkType === "TCP"
+          ? "Cổng TCP"
+          : "HTTP chấp nhận",
+      w.checkType === "DNS"
+        ? w.dnsRecordType
+        : w.checkType === "TCP"
+          ? w.tcpPort
+          : w.expectedCodes,
+    ],
     ["Ngày tạo", date(w.createdAt)],
     ["Giám sát", w.enabled ? "Đang bật" : "Tạm dừng"],
   ]
@@ -347,6 +390,8 @@ async function fetchData() {
     request("/websites", {
       params: {
         search: state.search,
+        groupName: state.groupName,
+        environment: state.environment,
         status: state.status,
         page: view === "dashboard" ? 0 : state.page,
         size: view === "dashboard" ? 100 : 8,
@@ -410,6 +455,7 @@ async function refresh(background = false) {
     document.querySelector("#last-updated").innerHTML =
       `${icon("refresh")}Cập nhật lúc ${time(state.updatedAt)} · ${DEMO ? "Demo" : "Tự động mỗi 10 giây"}`;
     bindView();
+    if (BACKEND) await enhanceView(view, data, refresh, state);
     if (focusId && !modal.open) {
       const next = document.getElementById(focusId);
       if (next) {
@@ -444,13 +490,6 @@ async function refresh(background = false) {
 }
 let searchTimer;
 function bindView() {
-  if (BACKEND) {
-    document.querySelectorAll('[data-action="archive"]').forEach((button) => button.remove());
-    document.querySelector('#logout')?.remove();
-    document.querySelectorAll('.config-row').forEach((row) => {
-      if (["Ngưỡng chậm", "Ngưỡng lỗi"].includes(row.querySelector('dt')?.textContent)) row.remove();
-    });
-  }
   bindChart(document.querySelector("#content"));
   document.querySelectorAll(".table-wrap").forEach((table) => {
     const hint = document.createElement("p");
@@ -534,12 +573,7 @@ async function openForm(id) {
   showModal(
     `<form id="website-form" novalidate><div class="modal-header"><div><h2 id="modal-title">${id ? "Chỉnh sửa website" : "Thêm website"}</h2><p>Thiết lập thông tin và chu kỳ giám sát website.</p></div><button type="button" class="icon-button" data-close aria-label="Đóng">${icon("down")}</button></div><div class="modal-body"><div class="form-message" role="alert"></div><div class="form-grid">${formField("name", "Tên website", w.name, "text", true)}${formField("url", "Địa chỉ URL", w.url, "url", true, "Bao gồm http:// hoặc https://. Ví dụ: https://portal.company.vn")}${formField("intervalSeconds", "Chu kỳ kiểm tra <small>(giây)</small>", w.intervalSeconds, "number")}${formField("timeoutMs", "Timeout <small>(ms)</small>", w.timeoutMs, "number")}${formField("slowThresholdMs", "Ngưỡng phản hồi chậm <small>(ms)</small>", w.slowThresholdMs, "number")}${formField("failureThreshold", "Số lỗi liên tiếp để báo DOWN", w.failureThreshold, "number")}${formField("expectedCodes", "Mã HTTP chấp nhận", w.expectedCodes, "text", true, "Mặc định 200–299. Có thể nhập: 200-299, 301, 302.")}<div class="field full"><label for="field-description">Mô tả <small>(không bắt buộc)</small></label><textarea id="field-description" name="description" rows="2" maxlength="500" aria-describedby="error-description">${esc(w.description)}</textarea><span class="field-error" id="error-description"></span></div></div></div><div class="modal-footer"><button type="button" class="button" data-close>Hủy</button><button class="button primary" type="submit">${icon("check")}${id ? "Lưu thay đổi" : "Thêm website"}</button></div></form>`,
   );
-  if (BACKEND) {
-    for (const name of ['timeoutMs', 'slowThresholdMs', 'failureThreshold', 'expectedCodes', 'description']) {
-      modal.querySelector(`[name="${name}"]`).closest('.field').remove();
-    }
-    modal.querySelector('.modal-header p').textContent = 'Lưu website vào cơ sở dữ liệu. Chu kỳ chỉ được lưu cấu hình; hiện cần bấm kiểm tra thủ công.';
-  }
+  if (BACKEND) addWebsiteFields(modal, w);
   modal.querySelector("[name=name]").focus();
   modal.querySelector("form").onsubmit = async (event) => {
     event.preventDefault();
@@ -557,13 +591,20 @@ async function openForm(id) {
     values.url = values.url.trim();
     values.expectedCodes = (values.expectedCodes || "").trim();
     values.description = (values.description || "").trim();
+    if (BACKEND) {
+      values.sslWarnDays = Number(values.sslWarnDays);
+      readCheckFields(form, values);
+    }
     if (id) values.version = w.version;
     form.querySelectorAll(".field-error").forEach((e) => (e.textContent = ""));
     form
       .querySelectorAll("[aria-invalid]")
       .forEach((e) => e.removeAttribute("aria-invalid"));
     form.querySelector(".form-message").textContent = "";
-    const errors = validateWebsite(values);
+    const errors = {
+      ...validateWebsite(values),
+      ...(BACKEND ? validateCheckFields(values) : {}),
+    };
     const showErrors = (errors) => {
       for (const [key, message] of Object.entries(errors)) {
         const input = form.elements.namedItem(key);
@@ -665,6 +706,8 @@ document.addEventListener("click", async (event) => {
   if (action === "archive") archiveWebsite(id);
   if (action === "clear-filters") {
     state.search = "";
+    state.groupName = "";
+    state.environment = "";
     state.status = "";
     state.page = 0;
     refresh();
@@ -691,10 +734,6 @@ document.addEventListener("click", async (event) => {
     );
 });
 async function login() {
-  if (BACKEND) {
-    location.replace('/');
-    return;
-  }
   document.title = "Đăng nhập · QLWebsite";
   app.innerHTML = `<main class="login-page" id="main"><section class="login-story"><a class="brand" href="/"><span class="brand-mark">${icon("pulse")}</span>QLWebsite</a><div class="login-copy"><div class="eyebrow">GIỮ KẾT NỐI. GIỮ NHỊP HOẠT ĐỘNG.</div><h1>Mọi website.<br>Một góc nhìn.</h1><p>Một không gian gọn gàng để theo dõi tình trạng, hiệu suất và những thay đổi của website nội bộ.</p><svg class="login-signal" viewBox="0 0 450 100" aria-hidden="true"><path d="M0 50h100l15-20 20 40 25-60 25 85 20-45h245"/></svg></div><footer>© ${new Date().getFullYear()} QLWebsite · Website monitoring</footer></section><section class="login-form-side"><form class="login-form" id="login-form"><div class="eyebrow">KHÔNG GIAN NỘI BỘ</div><h2>${DEMO ? "Chào mừng bạn." : "Chào mừng trở lại."}</h2><p>${DEMO ? "Khám phá không gian quản lý và giám sát website." : "Đăng nhập để tiếp tục quản lý website của bạn."}</p><div class="form-message" role="alert"></div>${DEMO ? "" : `<div class="field"><label for="username">Tên đăng nhập</label><input class="input" id="username" name="username" autocomplete="username" required></div><div class="field"><label for="password">Mật khẩu</label><input class="input" type="password" id="password" name="password" autocomplete="current-password" required></div>`}<button class="button primary" type="submit">${DEMO ? "Mở dashboard demo" : "Đăng nhập"}${icon("arrow")}</button>${DEMO ? '<div class="notice"><strong>Phiên bản giao diện · Task 2</strong>Dữ liệu được mô phỏng và lưu trong trình duyệt. Không cần tài khoản. Chức năng giám sát thực tế sẽ được kết nối khi backend sẵn sàng.</div>' : ""}</form></section></main>`;
   document.querySelector("#login-form").onsubmit = async (e) => {
@@ -703,10 +742,11 @@ async function login() {
       button = form.querySelector("button");
     button.disabled = true;
     try {
+      const credentials = Object.fromEntries(new FormData(form));
       if (!DEMO)
         await request("/session", {
           method: "POST",
-          body: Object.fromEntries(new FormData(form)),
+          body: credentials,
         });
       location.assign("/");
     } catch (error) {
@@ -715,8 +755,19 @@ async function login() {
     }
   };
 }
-if (view === "login") login();
-else {
+if (view === "login") await login();
+else if (
+  BACKEND &&
+  !(await initializeSession().catch((error) => {
+    app.innerHTML = `<main class="standalone-message"><h1>Không kết nối được hệ thống</h1><p>${esc(error.message)}</p><a class="button" href="/login">Thử lại</a></main>`;
+    return false;
+  }))
+)
+  location.replace("/login");
+else if (view === "users") {
+  shell();
+  await mountManagement(view);
+} else {
   state.status = new URLSearchParams(location.search).get("status") || "";
   shell();
   refresh();

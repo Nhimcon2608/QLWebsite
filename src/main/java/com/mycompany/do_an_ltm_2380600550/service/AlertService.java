@@ -1,77 +1,125 @@
 package com.mycompany.do_an_ltm_2380600550.service;
 
 import com.mycompany.do_an_ltm_2380600550.dto.AlertResponse;
-import com.mycompany.do_an_ltm_2380600550.entity.AlertEventType;
-import com.mycompany.do_an_ltm_2380600550.entity.UptimeCheckLog;
-import com.mycompany.do_an_ltm_2380600550.entity.WebsiteAlert;
-import com.mycompany.do_an_ltm_2380600550.repository.UptimeCheckLogRepository;
-import com.mycompany.do_an_ltm_2380600550.repository.WebsiteAlertRepository;
-import com.mycompany.do_an_ltm_2380600550.repository.WebsiteRepository;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
+import com.mycompany.do_an_ltm_2380600550.entity.*;
+import com.mycompany.do_an_ltm_2380600550.repository.*;
+import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.*;
 
 @Service
 public class AlertService {
-    private final WebsiteAlertRepository alertRepository;
-    private final UptimeCheckLogRepository logRepository;
-    private final WebsiteRepository websiteRepository;
+  private final WebsiteAlertRepository alerts;
+  private final UptimeCheckLogRepository logs;
+  private final WebsiteRepository websites;
+  private final IncidentRepository incidents;
+  private final NotificationService notifications;
 
-    public AlertService(WebsiteAlertRepository alertRepository, UptimeCheckLogRepository logRepository,
-                        WebsiteRepository websiteRepository) {
-        this.alertRepository = alertRepository;
-        this.logRepository = logRepository;
-        this.websiteRepository = websiteRepository;
-    }
+  public AlertService(
+      WebsiteAlertRepository alerts,
+      UptimeCheckLogRepository logs,
+      WebsiteRepository websites,
+      IncidentRepository incidents,
+      NotificationService notifications) {
+    this.alerts = alerts;
+    this.logs = logs;
+    this.websites = websites;
+    this.incidents = incidents;
+    this.notifications = notifications;
+  }
 
-    // Called while holding the website lock, in the same transaction as the HTTP result.
-    @Transactional(propagation = Propagation.MANDATORY)
-    public void recordTransition(UptimeCheckLog previous, UptimeCheckLog current) {
-        boolean isUp = Boolean.TRUE.equals(current.getIsUp());
-        boolean wasUp = previous != null && Boolean.TRUE.equals(previous.getIsUp());
-        AlertEventType type;
-        if (!isUp && (previous == null || wasUp)) {
-            type = AlertEventType.DOWN;
-        } else if (isUp && previous != null && !wasUp) {
-            type = AlertEventType.RECOVERY;
-        } else {
-            return;
+  @Transactional(propagation = Propagation.MANDATORY)
+  public void recordTransition(UptimeCheckLog previous, UptimeCheckLog current) {
+    record(current, true);
+  }
+
+  private void record(UptimeCheckLog current, boolean notify) {
+    var w = current.getWebsite();
+    boolean up = Boolean.TRUE.equals(current.getIsUp());
+    String before = w.getMonitoringStatus();
+    AlertEventType type = null;
+    if (up) {
+      w.setConsecutiveFailures(0);
+      w.setFirstFailureAt(null);
+      w.setMonitoringStatus(current.getResponseTimeMs() > w.getSlowThresholdMs() ? "SLOW" : "UP");
+      if (before.equals("DOWN")) {
+        type = AlertEventType.RECOVERY;
+        incidents
+            .findFirstByWebsiteIdAndStatusOrderByIdDesc(w.getId(), "OPEN")
+            .ifPresent(
+                i -> {
+                  i.setStatus("RESOLVED");
+                  i.setResolvedAt(current.getCheckedAt());
+                  incidents.save(i);
+                });
+      }
+    } else {
+      w.setConsecutiveFailures(w.getConsecutiveFailures() + 1);
+      if (w.getFirstFailureAt() == null) w.setFirstFailureAt(current.getCheckedAt());
+      if (w.getConsecutiveFailures() >= w.getFailureThreshold()) {
+        w.setMonitoringStatus("DOWN");
+        if (!before.equals("DOWN")) {
+          type = AlertEventType.DOWN;
+          if (!incidents.existsByOpeningCheckLogId(current.getId())) {
+            var i = new Incident();
+            i.setWebsiteId(w.getId());
+            i.setOpeningCheckLogId(current.getId());
+            i.setFirstFailureAt(w.getFirstFailureAt());
+            i.setDetectedAt(current.getCheckedAt());
+            i.setReason(current.getErrorMessage());
+            incidents.save(i);
+          }
         }
-        if (alertRepository.existsByCheckLogId(current.getId())) return;
-
-        String name = current.getWebsite().getName();
-        String message;
-        if (type == AlertEventType.RECOVERY) {
-            message = name + " đã hoạt động trở lại. HTTP " + current.getStatusCode()
-                    + " · Phản hồi " + current.getResponseTimeMs() + " ms.";
-        } else {
-            String reason = current.getStatusCode() != null ? "HTTP " + current.getStatusCode()
-                    : current.getErrorMessage() != null && !current.getErrorMessage().isBlank()
-                        ? current.getErrorMessage() : "Không thể kết nối đến website.";
-            message = name + " đang ngừng hoạt động. " + reason;
-        }
-        alertRepository.save(new WebsiteAlert(current, type, message));
+      }
     }
-
-    // Reconstruct actual historical transitions when upgrading an existing database.
-    // The unique check_log_id and website lock also make repeated startup safe.
-    @Transactional
-    public void synchronizeWebsiteHistory(Long websiteId) {
-        if (websiteRepository.findByIdForUpdate(websiteId).isEmpty()) return;
-        UptimeCheckLog previous = null;
-        for (UptimeCheckLog current : logRepository.findByWebsiteIdOrderByIdAsc(websiteId)) {
-            recordTransition(previous, current);
-            previous = current;
-        }
+    w.setLastCheckedAt(current.getCheckedAt());
+    if (type == null || alerts.existsByCheckLogId(current.getId())) return;
+    String message =
+        w.getName()
+            + (type == AlertEventType.RECOVERY
+                ? " đã hoạt động trở lại."
+                : " đang ngừng hoạt động.")
+            + " "
+            + (current.getStatusCode() != null
+                ? "HTTP " + current.getStatusCode()
+                : current.getErrorMessage());
+    alerts.save(new WebsiteAlert(current, type, message));
+    if (notify) {
+      String details =
+          message + "\nURL: " + w.getUrl() + "\nThời điểm: " + current.getCheckedAt() + " UTC";
+      if (type == AlertEventType.RECOVERY) {
+        var resolved =
+            incidents.findByWebsiteIdOrderByIdDesc(w.getId()).stream()
+                .filter(i -> i.getResolvedAt() != null)
+                .findFirst();
+        if (resolved.isPresent())
+          details +=
+              "\nGián đoạn: "
+                  + java.time.Duration.between(
+                          resolved.get().getFirstFailureAt(), current.getCheckedAt())
+                      .toSeconds()
+                  + " giây";
+      }
+      notifications.enqueue("[QLWebsite] " + type + " · " + w.getName(), details);
     }
+  }
 
-    @Transactional(readOnly = true)
-    public Page<AlertResponse> getAlerts(int page, int size, Long websiteId, AlertEventType eventType) {
-        var pageable = PageRequest.of(page, size,
-                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
-        return alertRepository.search(websiteId, eventType, pageable).map(AlertResponse::from);
-    }
+  @Transactional
+  public void synchronizeWebsiteHistory(Long websiteId) {
+    var w = websites.findByIdForUpdate(websiteId).orElse(null);
+    if (w == null || w.getLastCheckedAt() != null) return;
+    for (var log : logs.findByWebsiteIdOrderByIdAsc(websiteId)) record(log, false);
+  }
+
+  @Transactional(readOnly = true)
+  public Page<AlertResponse> getAlerts(
+      int page, int size, Long websiteId, AlertEventType eventType) {
+    return alerts
+        .search(
+            websiteId,
+            eventType,
+            PageRequest.of(
+                page, size, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"))))
+        .map(AlertResponse::from);
+  }
 }

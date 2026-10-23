@@ -1586,3 +1586,200 @@ dialog::backdrop {
     color: #888;
   }
 }
+
+/* Monitoring administration */
+.website-meta {
+  display: block;
+  color: var(--muted, #777);
+  font-size: 10px;
+  margin-top: 4px;
+  max-width: 280px;
+  white-space: normal;
+}
+.status.maintenance {
+  color: #876b13;
+  background: #fff7db;
+}
+.status.unknown {
+  color: #666;
+  background: #f1f1f1;
+}
+.status.paused {
+  color: #777;
+  background: #f5f5f5;
+}
+.status.slow {
+  color: #a8640b;
+  background: #fff3dc;
+}
+.check-field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 12px 0;
+}
+.check-field input {
+  width: 16px;
+  height: 16px;
+  accent-color: #222;
+  flex-shrink: 0;
+}
+
+.panel-note {
+  padding: 12px 20px;
+  font-size: 11px;
+  color: #777;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.report-strip {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 18px 20px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.report-strip .button {
+  margin-left: auto;
+}
+.maintenance-row {
+  padding: 16px 20px;
+  border-top: 1px solid #eee;
+  font-size: 12px;
+}
+.maintenance-row p {
+  color: #777;
+  font-size: 11px;
+  line-height: 1.8;
+}
+.incident-notes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.standalone-message {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+.standalone-message .brand {
+  margin-bottom: 64px;
+  display: inline-flex;
+}
+.standalone-message .page-heading {
+  margin-bottom: 32px;
+}
+#csv-preview {
+  max-height: 320px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.8;
+}
+#extra-message,
+#report-error {
+  color: #a53b32;
+  font-size: 12px;
+}
+@media (max-width: 700px) {
+  .standalone-message {
+    padding: 28px 16px;
+  }
+  .report-strip {
+    gap: 12px;
+  }
+  .report-strip .button {
+    margin-left: 0;
+  }
+  .chart-header {
+    flex-wrap: wrap;
+  }
+}
+.filter-bar {
+  flex-wrap: wrap;
+}
+.filter-bar select {
+  max-width: 180px;
+}
+@media (max-width: 700px) {
+  .filter-bar select {
+    max-width: none;
+  }
+}
+
+[hidden] {
+  display: none !important;
+}
+.check-fields {
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+.check-fields h3 {
+  margin: 12px 0;
+}
+.check-fields .form-grid {
+  margin-bottom: 12px;
+}
+.check-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.check-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.check-details,
+.scan-table td {
+  overflow-wrap: anywhere;
+}
+.scan-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  padding: 0 22px 16px;
+}
+.scan-controls > label:not(.check-option) {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.scan-controls input[type="number"] {
+  width: 125px;
+}
+.scan-controls select {
+  max-width: 100%;
+  width: 320px;
+}
+.scan-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  padding: 14px 22px 0;
+}
+.scan-table {
+  table-layout: fixed;
+}
+.scan-table th:first-child {
+  width: 60%;
+}
+.scan-table th:nth-child(2) {
+  width: 65px;
+}
+.scan-table a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 650px) {
+  .scan-controls {
+    align-items: start;
+  }
+  .scan-table {
+    min-width: 550px;
+  }
+}
