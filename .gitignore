@@ -1,5 +1,9 @@
 /KE_HOACH_PHAT_TRIEN.md
 /target/
+/web/target/
+/node_modules/
+__pycache__/
+*.py[cod]
 /data/
 /logs/
 *.log

@@ -1,0 +1,6 @@
+﻿name,url,groupName,environment,tags
+Google,https://www.google.com,Công cụ tìm kiếm,production,"search,public"
+Wikipedia,https://www.wikipedia.org,Tra cứu,production,"wiki,reference"
+GitHub,https://github.com,Phát triển,production,"git,dev"
+Spring,https://spring.io,Tài liệu,production,"java,spring"
+MDN Web Docs,https://developer.mozilla.org,Tài liệu,production,"web,docs"

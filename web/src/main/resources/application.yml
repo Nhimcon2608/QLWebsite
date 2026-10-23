@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: QLWebsite-Web
+server:
+  port: ${PORT:8080}
+  address: 127.0.0.1
+app:
+  ui:
+    demo: false
+    backend: true
+  backend:
+    url: ${BACKEND_URL:http://127.0.0.1:8082}

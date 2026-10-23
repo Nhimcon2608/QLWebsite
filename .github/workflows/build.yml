@@ -2,7 +2,7 @@ name: Java build
 
 on:
   push:
-    branches: [main]
+    branches: [main, backend]
   pull_request:
 
 permissions:
@@ -20,3 +20,5 @@ jobs:
           cache: maven
       - name: Build with Maven Wrapper
         run: ./mvnw --batch-mode --no-transfer-progress clean verify
+      - name: Build and test web frontend
+        run: ./mvnw --batch-mode --no-transfer-progress -f web/pom.xml clean verify
